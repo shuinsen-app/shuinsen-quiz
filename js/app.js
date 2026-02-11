@@ -395,6 +395,15 @@ createApp({
       const total = candidates.reduce((sum, c) => sum + c.votes, 0);
       return (votes / total * 100).toFixed(1);
     }
+
+    // 地図URLを生成
+    function getMapUrl() {
+      const area = currentDistrict.value.area;
+      if (!area) return '';
+      const firstArea = area.split('、')[0].replace(/の一部$/, '');
+      const query = encodeURIComponent(firstArea);
+      return 'https://maps.google.com/maps?q=' + query + '&z=11&output=embed';
+    }
     
     // 初期化
     onMounted(async () => {
@@ -445,7 +454,8 @@ createApp({
       showRanking,
       formatNumber,
       calculatePercentage,
-      getPartyColor
+      getPartyColor,
+      getMapUrl
     };
   }
 }).mount('#app');
