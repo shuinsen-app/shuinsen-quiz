@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
@@ -92,15 +95,7 @@
         
         <!-- 地図表示 -->
         <div class="answer-map" v-if="currentDistrict.area">
-          <iframe 
-            :src="getMapUrl()" 
-            width="100%" 
-            height="200" 
-            style="border:0; border-radius: 8px;" 
-            allowfullscreen="" 
-            loading="lazy"
-            referrerpolicy="no-referrer-when-downgrade">
-          </iframe>
+          <div id="answerMap"></div>
         </div>
         
         <!-- 候補者一覧表 -->

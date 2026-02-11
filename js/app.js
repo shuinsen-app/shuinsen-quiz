@@ -154,6 +154,7 @@ createApp({
       isCorrect.value = false;
       answerTime.value = TIME_LIMIT;
       questionScore.value = 0;
+      showAnswerMap();
     }
     
     // スコア計算
@@ -307,10 +308,12 @@ createApp({
       // スコア計算
       questionScore.value = calculateScore(timeLeft.value);
       score.value = Math.round((score.value + questionScore.value) * 100) / 100;
+      showAnswerMap();
     }
     
     // 次の問題へ
     function nextQuestion() {
+      destroyAnswerMap();
       if (currentQuestion.value + 1 >= totalQuestions.value) {
         stopTimer();
         screen.value = 'result';
@@ -396,13 +399,47 @@ createApp({
       return (votes / total * 100).toFixed(1);
     }
 
-    // 地図URLを生成
-    function getMapUrl() {
-      const area = currentDistrict.value.area;
-      if (!area) return '';
-      const firstArea = area.split('、')[0].replace(/の一部$/, '');
-      const query = encodeURIComponent(firstArea);
-      return 'https://maps.google.com/maps?q=' + query + '&z=11&output=embed';
+    // 都道府県の中心座標
+    const PREF_COORDS = {
+      '北海道':[43.06,141.35],'青森':[40.82,140.74],'岩手':[39.70,141.15],'宮城':[38.27,140.87],
+      '秋田':[39.72,140.10],'山形':[38.24,140.33],'福島':[37.75,140.47],'茨城':[36.34,140.45],
+      '栃木':[36.57,139.88],'群馬':[36.39,139.06],'埼玉':[35.86,139.65],'千葉':[35.61,140.12],
+      '東京':[35.68,139.69],'神奈川':[35.45,139.64],'新潟':[37.90,139.02],'富山':[36.70,137.21],
+      '石川':[36.59,136.63],'福井':[36.07,136.22],'山梨':[35.66,138.57],'長野':[36.23,138.18],
+      '岐阜':[35.39,136.72],'静岡':[34.98,138.38],'愛知':[35.18,136.91],'三重':[34.73,136.51],
+      '滋賀':[35.00,135.87],'京都':[35.02,135.76],'大阪':[34.69,135.52],'兵庫':[34.69,135.18],
+      '奈良':[34.69,135.83],'和歌山':[34.23,135.17],'鳥取':[35.50,134.24],'島根':[35.47,133.05],
+      '岡山':[34.66,133.93],'広島':[34.40,132.46],'山口':[34.19,131.47],'徳島':[34.07,134.56],
+      '香川':[34.34,134.04],'愛媛':[33.84,132.77],'高知':[33.56,133.53],'福岡':[33.61,130.42],
+      '佐賀':[33.25,130.30],'長崎':[32.74,129.87],'熊本':[32.79,130.74],'大分':[33.24,131.61],
+      '宮崎':[31.91,131.42],'鹿児島':[31.56,130.56],'沖縄':[26.34,127.80]
+    };
+
+    let answerMapInstance = null;
+
+    // 地図を表示
+    function showAnswerMap() {
+      destroyAnswerMap();
+      Vue.nextTick(() => {
+        const el = document.getElementById('answerMap');
+        if (!el) return;
+        const pref = currentDistrict.value.prefecture;
+        const coords = PREF_COORDS[pref];
+        if (!coords) return;
+        const map = L.map('answerMap', { zoomControl: false, attributionControl: false }).setView(coords, 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 18
+        }).addTo(map);
+        L.marker(coords).addTo(map);
+        answerMapInstance = map;
+      });
+    }
+
+    function destroyAnswerMap() {
+      if (answerMapInstance) {
+        answerMapInstance.remove();
+        answerMapInstance = null;
+      }
     }
     
     // 初期化
@@ -455,7 +492,8 @@ createApp({
       formatNumber,
       calculatePercentage,
       getPartyColor,
-      getMapUrl
+      showAnswerMap,
+      destroyAnswerMap
     };
   }
 }).mount('#app');
