@@ -4,8 +4,9 @@ const { createApp, ref, computed, watch, onMounted, nextTick, onUnmounted } = Vu
 // ランキング管理（Firebase Realtime Database）
 const MAX_RANKING = 10;
 
-// 初級編の対象都道府県
-const BEGINNER_PREFECTURES = ['北海道', '東京', '愛知', '大阪', '福岡'];
+// モード別の対象都道府県
+const BEGINNER_PREFECTURES = ['東京', '大阪'];
+const INTERMEDIATE_PREFECTURES = ['北海道', '東京', '愛知', '大阪', '福岡'];
 
 function getRankingPath(mode) {
   return 'rankings/' + (mode || 'beginner');
@@ -73,7 +74,7 @@ createApp({
   setup() {
     // 画面状態
     const screen = ref('title'); // 'title', 'quiz', 'result', 'ranking'
-    const gameMode = ref('beginner'); // 'beginner' or 'advanced'
+    const gameMode = ref('beginner'); // 'beginner', 'intermediate', or 'advanced'
     
     // ゲームデータ
     const electionData = ref(null);
@@ -178,13 +179,18 @@ createApp({
     
     // モード表示名
     const modeLabel = computed(() => {
-      return gameMode.value === 'beginner' ? '初級編' : '上級編';
+      if (gameMode.value === 'beginner') return '初級編';
+      if (gameMode.value === 'intermediate') return '中級編';
+      return '上級編';
     });
     
     // 対象選挙区数
     const filteredDistrictsCount = computed(() => {
       if (gameMode.value === 'beginner') {
         return districts.value.filter(d => BEGINNER_PREFECTURES.includes(d.prefecture)).length;
+      }
+      if (gameMode.value === 'intermediate') {
+        return districts.value.filter(d => INTERMEDIATE_PREFECTURES.includes(d.prefecture)).length;
       }
       return districts.value.length;
     });
@@ -200,6 +206,8 @@ createApp({
       let pool = districts.value;
       if (gameMode.value === 'beginner') {
         pool = districts.value.filter(d => BEGINNER_PREFECTURES.includes(d.prefecture));
+      } else if (gameMode.value === 'intermediate') {
+        pool = districts.value.filter(d => INTERMEDIATE_PREFECTURES.includes(d.prefecture));
       }
       
       // ランダムに問題を選択
@@ -234,6 +242,8 @@ createApp({
       let pool = districts.value;
       if (gameMode.value === 'beginner') {
         pool = districts.value.filter(d => BEGINNER_PREFECTURES.includes(d.prefecture));
+      } else if (gameMode.value === 'intermediate') {
+        pool = districts.value.filter(d => INTERMEDIATE_PREFECTURES.includes(d.prefecture));
       }
       
       const others = pool
@@ -420,18 +430,24 @@ createApp({
     // 地図を表示
     function showAnswerMap() {
       destroyAnswerMap();
-      nextTick(() => {
+      const tryInit = () => {
         const el = document.getElementById('answerMap');
-        if (!el) return;
+        if (!el) return false;
         const pref = currentDistrict.value.prefecture;
         const coords = PREF_COORDS[pref];
-        if (!coords) return;
+        if (!coords) return false;
         const map = L.map('answerMap', { zoomControl: false, attributionControl: false }).setView(coords, 10);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 18
         }).addTo(map);
         L.marker(coords).addTo(map);
         answerMapInstance = map;
+        return true;
+      };
+      nextTick(() => {
+        if (!tryInit()) {
+          setTimeout(tryInit, 100);
+        }
       });
     }
 

@@ -539,6 +539,15 @@ body {
   box-shadow: 0 8px 24px rgba(233, 30, 99, 0.35);
 }
 
+.mode-card-intermediate {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  border-color: #2196F3;
+}
+
+.mode-card-intermediate:hover {
+  box-shadow: 0 8px 24px rgba(33, 150, 243, 0.35);
+}
+
 .mode-icon {
   font-size: 2.5rem;
   margin-bottom: 8px;

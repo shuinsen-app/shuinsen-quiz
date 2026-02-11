@@ -25,6 +25,12 @@
         <div class="mode-card" @click="startGame('beginner')">
           <div class="mode-icon">📗</div>
           <div class="mode-title">初級編</div>
+          <div class="mode-desc">東京・大阪</div>
+          <div class="mode-count">全49選挙区から出題</div>
+        </div>
+        <div class="mode-card mode-card-intermediate" @click="startGame('intermediate')">
+          <div class="mode-icon">📙</div>
+          <div class="mode-title">中級編</div>
           <div class="mode-desc">北海道・東京・愛知・大阪・福岡</div>
           <div class="mode-count">全88選挙区から出題</div>
         </div>
@@ -170,6 +176,7 @@
       
       <div class="ranking-mode-tabs">
         <button @click="showRanking('beginner')" :class="['tab-btn', gameMode === 'beginner' ? 'active' : '']">初級編</button>
+        <button @click="showRanking('intermediate')" :class="['tab-btn', gameMode === 'intermediate' ? 'active' : '']">中級編</button>
         <button @click="showRanking('advanced')" :class="['tab-btn', gameMode === 'advanced' ? 'active' : '']">上級編</button>
       </div>
       
