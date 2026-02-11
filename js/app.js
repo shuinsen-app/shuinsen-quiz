@@ -420,7 +420,7 @@ createApp({
     // 地図を表示
     function showAnswerMap() {
       destroyAnswerMap();
-      Vue.nextTick(() => {
+      nextTick(() => {
         const el = document.getElementById('answerMap');
         if (!el) return;
         const pref = currentDistrict.value.prefecture;
