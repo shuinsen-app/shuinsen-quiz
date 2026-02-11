@@ -1,41 +1,72 @@
 // 衆院選クイズ メインアプリケーション
 const { createApp, ref, computed, watch, onMounted, nextTick, onUnmounted } = Vue;
 
-// ランキング管理
-const RANKING_KEY_PREFIX = 'shuinsen_quiz_ranking_';
+// ランキング管理（Firebase Realtime Database）
 const MAX_RANKING = 10;
 
 // 初級編の対象都道府県
 const BEGINNER_PREFECTURES = ['北海道', '東京', '愛知', '大阪', '福岡'];
 
-function getRankingKey(mode) {
-  return RANKING_KEY_PREFIX + (mode || 'beginner');
+function getRankingPath(mode) {
+  return 'rankings/' + (mode || 'beginner');
 }
 
-function loadRanking(mode) {
+// Firebaseからランキングを読み込み（非同期）
+async function loadRankingFromDB(mode) {
   try {
-    const data = localStorage.getItem(getRankingKey(mode));
-    return data ? JSON.parse(data) : [];
-  } catch {
+    const snapshot = await db.ref(getRankingPath(mode))
+      .orderByChild('score')
+      .limitToLast(MAX_RANKING)
+      .once('value');
+    
+    const data = snapshot.val();
+    if (!data) return [];
+    
+    // オブジェクト→配列、スコア降順
+    return Object.values(data)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_RANKING);
+  } catch (error) {
+    console.error('ランキング読み込みエラー:', error);
     return [];
   }
 }
 
-function saveRanking(ranking, mode) {
-  localStorage.setItem(getRankingKey(mode), JSON.stringify(ranking));
-}
-
-function addToRanking(name, score, mode) {
-  const ranking = loadRanking(mode);
-  ranking.push({
-    name,
-    score,
-    date: new Date().toISOString()
-  });
-  ranking.sort((a, b) => b.score - a.score);
-  const trimmed = ranking.slice(0, MAX_RANKING);
-  saveRanking(trimmed, mode);
-  return trimmed;
+// Firebaseにスコアを追加（非同期）
+async function addToRankingDB(name, score, mode) {
+  try {
+    const entry = {
+      name,
+      score,
+      date: new Date().toISOString()
+    };
+    await db.ref(getRankingPath(mode)).push(entry);
+    
+    // 上位10件以外を削除（クリーンアップ）
+    const snapshot = await db.ref(getRankingPath(mode))
+      .orderByChild('score')
+      .once('value');
+    
+    const data = snapshot.val();
+    if (data) {
+      const entries = Object.entries(data)
+        .map(([key, val]) => ({ key, ...val }))
+        .sort((a, b) => b.score - a.score);
+      
+      // 10件超えたら下位を削除
+      if (entries.length > MAX_RANKING) {
+        const toDelete = entries.slice(MAX_RANKING);
+        const updates = {};
+        toDelete.forEach(e => { updates[e.key] = null; });
+        await db.ref(getRankingPath(mode)).update(updates);
+      }
+    }
+    
+    return await loadRankingFromDB(mode);
+  } catch (error) {
+    console.error('ランキング登録エラー:', error);
+    return [];
+  }
 }
 
 createApp({
@@ -315,18 +346,18 @@ createApp({
     }
     
     // ランキング登録
-    function submitScore() {
+    async function submitScore() {
       if (!playerName.value.trim()) {
         playerName.value = '名無しさん';
       }
-      ranking.value = addToRanking(playerName.value.trim(), score.value, gameMode.value);
+      ranking.value = await addToRankingDB(playerName.value.trim(), score.value, gameMode.value);
       showNameInput.value = false;
     }
     
     // ランキング表示
-    function showRanking(mode) {
+    async function showRanking(mode) {
       if (mode) gameMode.value = mode;
-      ranking.value = loadRanking(gameMode.value);
+      ranking.value = await loadRankingFromDB(gameMode.value);
       screen.value = 'ranking';
     }
     
@@ -359,9 +390,9 @@ createApp({
     }
     
     // 初期化
-    onMounted(() => {
+    onMounted(async () => {
       loadData();
-      ranking.value = loadRanking(gameMode.value);
+      ranking.value = await loadRankingFromDB(gameMode.value);
     });
     
     onUnmounted(() => {
