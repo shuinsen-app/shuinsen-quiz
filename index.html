@@ -87,6 +87,7 @@
         </div>
         <div class="correct-answer">
           正解: <strong>{{ currentDistrict.name }}</strong>
+          <div class="answer-area" v-if="currentDistrict.area">（{{ currentDistrict.area }}）</div>
         </div>
         
         <!-- 候補者一覧表 -->

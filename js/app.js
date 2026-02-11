@@ -228,7 +228,14 @@ createApp({
     // 4択を生成
     function generateChoices() {
       const correct = currentDistrict.value;
-      const others = districts.value
+      
+      // モードに応じて選択肢のプールを絞る
+      let pool = districts.value;
+      if (gameMode.value === 'beginner') {
+        pool = districts.value.filter(d => BEGINNER_PREFECTURES.includes(d.prefecture));
+      }
+      
+      const others = pool
         .filter(d => d.id !== correct.id)
         .sort(() => Math.random() - 0.5)
         .slice(0, 3);

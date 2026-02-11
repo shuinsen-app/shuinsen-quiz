@@ -602,3 +602,11 @@ body {
   border-color: #7c4dff;
   color: #7c4dff;
 }
+
+/* 選挙区エリア情報 */
+.answer-area {
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: 4px;
+  font-weight: normal;
+}
