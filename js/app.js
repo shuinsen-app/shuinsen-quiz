@@ -1,0 +1,413 @@
+// 衆院選クイズ メインアプリケーション
+const { createApp, ref, computed, watch, onMounted, nextTick, onUnmounted } = Vue;
+
+// ランキング管理
+const RANKING_KEY_PREFIX = 'shuinsen_quiz_ranking_';
+const MAX_RANKING = 10;
+
+// 初級編の対象都道府県
+const BEGINNER_PREFECTURES = ['北海道', '東京', '愛知', '大阪', '福岡'];
+
+function getRankingKey(mode) {
+  return RANKING_KEY_PREFIX + (mode || 'beginner');
+}
+
+function loadRanking(mode) {
+  try {
+    const data = localStorage.getItem(getRankingKey(mode));
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRanking(ranking, mode) {
+  localStorage.setItem(getRankingKey(mode), JSON.stringify(ranking));
+}
+
+function addToRanking(name, score, mode) {
+  const ranking = loadRanking(mode);
+  ranking.push({
+    name,
+    score,
+    date: new Date().toISOString()
+  });
+  ranking.sort((a, b) => b.score - a.score);
+  const trimmed = ranking.slice(0, MAX_RANKING);
+  saveRanking(trimmed, mode);
+  return trimmed;
+}
+
+createApp({
+  setup() {
+    // 画面状態
+    const screen = ref('title'); // 'title', 'quiz', 'result', 'ranking'
+    const gameMode = ref('beginner'); // 'beginner' or 'advanced'
+    
+    // ゲームデータ
+    const electionData = ref(null);
+    const districts = ref([]);
+    
+    // クイズ状態
+    const currentQuestion = ref(0);
+    const totalQuestions = ref(10);
+    const score = ref(0);
+    const answered = ref(false);
+    const isCorrect = ref(false);
+    
+    // 現在の問題
+    const currentDistrict = ref(null);
+    const choices = ref([]);
+    const quizDistricts = ref([]);
+    const selectedChoice = ref(null);
+    
+    // タイマー
+    const TIME_LIMIT = 20;
+    const timeLeft = ref(TIME_LIMIT);
+    const questionStartTime = ref(0);
+    const answerTime = ref(0);
+    const questionScore = ref(0);
+    let timerInterval = null;
+    
+    // ランキング
+    const ranking = ref([]);
+    const playerName = ref('');
+    const showNameInput = ref(false);
+    
+    // Chart.js インスタンス
+    let chartInstance = null;
+    
+    // データ読み込み
+    async function loadData() {
+      try {
+        const response = await fetch('data/election2026.json');
+        electionData.value = await response.json();
+        districts.value = electionData.value.districts;
+      } catch (error) {
+        console.error('データの読み込みに失敗しました:', error);
+      }
+    }
+    
+    // タイマー開始
+    function startTimer() {
+      timeLeft.value = TIME_LIMIT;
+      questionStartTime.value = Date.now();
+      
+      if (timerInterval) clearInterval(timerInterval);
+      
+      timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - questionStartTime.value) / 1000;
+        timeLeft.value = Math.max(0, TIME_LIMIT - elapsed);
+        
+        if (timeLeft.value <= 0) {
+          // 時間切れ
+          clearInterval(timerInterval);
+          if (!answered.value) {
+            handleTimeUp();
+          }
+        }
+      }, 50);
+    }
+    
+    // タイマー停止
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+    
+    // 時間切れ処理
+    function handleTimeUp() {
+      answered.value = true;
+      isCorrect.value = false;
+      answerTime.value = TIME_LIMIT;
+      questionScore.value = 0;
+    }
+    
+    // スコア計算
+    // 4秒以内: 5 + 5 = 10点
+    // 4秒以降: 5 + 残り秒数 * 5/16 (小数点2桁)
+    function calculateScore(timeRemaining) {
+      if (!isCorrect.value) return 0;
+      
+      const elapsedTime = TIME_LIMIT - timeRemaining;
+      
+      if (elapsedTime <= 4) {
+        // 4秒以内は満点
+        return 10.00;
+      } else {
+        // 4秒以降: 5点 + 残り秒数 * 5/16
+        const bonus = timeRemaining * 5 / 16;
+        const total = 5 + bonus;
+        return Math.round(total * 100) / 100;
+      }
+    }
+    
+    // モード表示名
+    const modeLabel = computed(() => {
+      return gameMode.value === 'beginner' ? '初級編' : '上級編';
+    });
+    
+    // 対象選挙区数
+    const filteredDistrictsCount = computed(() => {
+      if (gameMode.value === 'beginner') {
+        return districts.value.filter(d => BEGINNER_PREFECTURES.includes(d.prefecture)).length;
+      }
+      return districts.value.length;
+    });
+    
+    // ゲーム開始
+    function startGame(mode) {
+      if (mode) gameMode.value = mode;
+      currentQuestion.value = 0;
+      score.value = 0;
+      showNameInput.value = false;
+      
+      // モードに応じて選挙区をフィルタリング
+      let pool = districts.value;
+      if (gameMode.value === 'beginner') {
+        pool = districts.value.filter(d => BEGINNER_PREFECTURES.includes(d.prefecture));
+      }
+      
+      // ランダムに問題を選択
+      const shuffled = [...pool].sort(() => Math.random() - 0.5);
+      quizDistricts.value = shuffled.slice(0, totalQuestions.value);
+      
+      screen.value = 'quiz';
+      loadQuestion();
+    }
+    
+    // 問題を読み込み
+    function loadQuestion() {
+      answered.value = false;
+      isCorrect.value = false;
+      selectedChoice.value = null;
+      questionScore.value = 0;
+      
+      currentDistrict.value = quizDistricts.value[currentQuestion.value];
+      generateChoices();
+      
+      nextTick(() => {
+        renderChart();
+        startTimer();
+      });
+    }
+    
+    // 4択を生成
+    function generateChoices() {
+      const correct = currentDistrict.value;
+      const others = districts.value
+        .filter(d => d.id !== correct.id)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 3);
+      
+      choices.value = [correct, ...others].sort(() => Math.random() - 0.5);
+    }
+    
+    // candidatesからresultsを計算
+    function getResultsFromCandidates(candidates) {
+      const totalVotes = candidates.reduce((sum, c) => sum + c.votes, 0);
+      return candidates.map(c => ({
+        party: c.party,
+        percentage: Math.round(c.votes / totalVotes * 1000) / 10
+      }));
+    }
+    
+    // チャートを描画
+    function renderChart() {
+      const canvas = document.getElementById('pieChart');
+      if (!canvas || !currentDistrict.value) return;
+      
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+      
+      const ctx = canvas.getContext('2d');
+      const results = getResultsFromCandidates(currentDistrict.value.candidates);
+      
+      chartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: results.map(r => r.party),
+          datasets: [{
+            data: results.map(r => r.percentage),
+            backgroundColor: results.map(r => getPartyColor(r.party)),
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `${context.label}: ${context.parsed}%`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // 回答選択
+    function selectAnswer(choice) {
+      if (answered.value) return;
+      
+      stopTimer();
+      answered.value = true;
+      selectedChoice.value = choice;
+      isCorrect.value = choice.id === currentDistrict.value.id;
+      answerTime.value = TIME_LIMIT - timeLeft.value;
+      
+      // スコア計算
+      questionScore.value = calculateScore(timeLeft.value);
+      score.value = Math.round((score.value + questionScore.value) * 100) / 100;
+    }
+    
+    // 次の問題へ
+    function nextQuestion() {
+      if (currentQuestion.value + 1 >= totalQuestions.value) {
+        stopTimer();
+        screen.value = 'result';
+        showNameInput.value = true;
+      } else {
+        currentQuestion.value++;
+        loadQuestion();
+      }
+    }
+    
+    // 選択肢のクラスを取得
+    function getChoiceClass(choice) {
+      if (!answered.value) return '';
+      
+      if (choice.id === currentDistrict.value.id) {
+        return 'correct';
+      }
+      if (selectedChoice.value && choice.id === selectedChoice.value.id) {
+        return 'incorrect';
+      }
+      return '';
+    }
+    
+    // 結果メッセージ
+    function getResultMessage() {
+      const maxScore = totalQuestions.value * 10;
+      const percent = score.value / maxScore * 100;
+      
+      if (percent >= 95) {
+        return '🎊 パーフェクト！選挙マスターです！';
+      } else if (percent >= 80) {
+        return '🌟 素晴らしい！かなりの選挙通ですね！';
+      } else if (percent >= 60) {
+        return '👍 よくできました！もう少しで上級者！';
+      } else if (percent >= 40) {
+        return '📚 まずまず！もっと選挙区を覚えよう！';
+      } else {
+        return '💪 がんばろう！選挙区の特徴を覚えていこう！';
+      }
+    }
+    
+    // ランキング登録
+    function submitScore() {
+      if (!playerName.value.trim()) {
+        playerName.value = '名無しさん';
+      }
+      ranking.value = addToRanking(playerName.value.trim(), score.value, gameMode.value);
+      showNameInput.value = false;
+    }
+    
+    // ランキング表示
+    function showRanking(mode) {
+      if (mode) gameMode.value = mode;
+      ranking.value = loadRanking(gameMode.value);
+      screen.value = 'ranking';
+    }
+    
+    // タイマー表示用（小数点1桁）
+    const timerDisplay = computed(() => {
+      return timeLeft.value.toFixed(1);
+    });
+    
+    // タイマーの色
+    const timerColor = computed(() => {
+      if (timeLeft.value <= 5) return '#dc3545';
+      if (timeLeft.value <= 10) return '#ffc107';
+      return '#28a745';
+    });
+    
+    // タイマーの幅（パーセント）
+    const timerWidth = computed(() => {
+      return (timeLeft.value / TIME_LIMIT) * 100;
+    });
+    
+    // 数値カンマ区切り
+    function formatNumber(num) {
+      return num.toLocaleString();
+    }
+    
+    // 得票率を計算
+    function calculatePercentage(votes, candidates) {
+      const total = candidates.reduce((sum, c) => sum + c.votes, 0);
+      return (votes / total * 100).toFixed(1);
+    }
+    
+    // 初期化
+    onMounted(() => {
+      loadData();
+      ranking.value = loadRanking(gameMode.value);
+    });
+    
+    onUnmounted(() => {
+      stopTimer();
+    });
+    
+    return {
+      // 状態
+      screen,
+      gameMode,
+      modeLabel,
+      filteredDistrictsCount,
+      currentQuestion,
+      totalQuestions,
+      score,
+      answered,
+      isCorrect,
+      currentDistrict,
+      choices,
+      selectedChoice,
+      questionScore,
+      
+      // タイマー
+      timeLeft,
+      timerDisplay,
+      timerColor,
+      timerWidth,
+      answerTime,
+      
+      // ランキング
+      ranking,
+      playerName,
+      showNameInput,
+      
+      // メソッド
+      startGame,
+      selectAnswer,
+      nextQuestion,
+      getChoiceClass,
+      getResultMessage,
+      getResultsFromCandidates,
+      submitScore,
+      showRanking,
+      formatNumber,
+      calculatePercentage,
+      getPartyColor
+    };
+  }
+}).mount('#app');

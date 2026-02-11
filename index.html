@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>衆院選クイズ - どこの選挙区？</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- タイトル画面 -->
+    <div v-if="screen === 'title'" class="screen title-screen">
+      <h1>🗳️ 衆院選クイズ</h1>
+      <p class="subtitle">円グラフを見て、どこの選挙区か当てよう！</p>
+      <p class="rules">制限時間20秒 / 全10問 / 1問最大10点</p>
+      <div class="mode-select">
+        <div class="mode-card" @click="startGame('beginner')">
+          <div class="mode-icon">📗</div>
+          <div class="mode-title">初級編</div>
+          <div class="mode-desc">北海道・東京・愛知・大阪・福岡</div>
+          <div class="mode-count">全88選挙区から出題</div>
+        </div>
+        <div class="mode-card mode-card-advanced" @click="startGame('advanced')">
+          <div class="mode-icon">📕</div>
+          <div class="mode-title">上級編</div>
+          <div class="mode-desc">全国47都道府県</div>
+          <div class="mode-count">全289選挙区から出題</div>
+        </div>
+      </div>
+      <button @click="showRanking()" class="btn btn-ranking">
+        ランキング
+      </button>
+    </div>
+
+    <!-- クイズ画面 -->
+    <div v-if="screen === 'quiz'" class="screen quiz-screen">
+      <div class="quiz-header">
+        <span class="mode-badge">{{ modeLabel }}</span>
+        <span class="question-count">問題 {{ currentQuestion + 1 }} / {{ totalQuestions }}</span>
+        <span class="score">スコア: {{ score.toFixed(2) }}</span>
+      </div>
+
+      <!-- タイマーバー -->
+      <div class="timer-container">
+        <div class="timer-bar" :style="{ width: timerWidth + '%', backgroundColor: timerColor }"></div>
+        <span class="timer-text" :style="{ color: timerColor }">{{ timerDisplay }}秒</span>
+      </div>
+
+      <div class="chart-container">
+        <canvas id="pieChart"></canvas>
+      </div>
+
+      <div class="legend">
+        <div v-for="(item, index) in getResultsFromCandidates(currentDistrict.candidates)" :key="index" class="legend-item">
+          <span class="legend-color" :style="{ backgroundColor: getPartyColor(item.party) }"></span>
+          <span class="legend-label">{{ item.party }} ({{ item.percentage }}%)</span>
+        </div>
+      </div>
+
+      <!-- 4択ボタン -->
+      <div class="choices">
+        <button 
+          v-for="choice in choices" 
+          :key="choice.id"
+          @click="selectAnswer(choice)"
+          :class="['choice-btn', getChoiceClass(choice)]"
+          :disabled="answered"
+        >
+          {{ choice.name }}
+        </button>
+      </div>
+
+      <!-- 結果表示 -->
+      <div v-if="answered" class="result-display">
+        <div :class="['result-text', isCorrect ? 'correct' : 'incorrect']">
+          {{ isCorrect ? '正解！🎉' : (timeLeft <= 0 ? '時間切れ...' : '不正解...') }}
+        </div>
+        <div class="score-detail">
+          <span v-if="isCorrect">+{{ questionScore.toFixed(2) }}点</span>
+          <span v-else>+0点</span>
+          <span class="answer-time">({{ answerTime.toFixed(2) }}秒)</span>
+        </div>
+        <div class="correct-answer">
+          正解: <strong>{{ currentDistrict.name }}</strong>
+        </div>
+        
+        <!-- 候補者一覧表 -->
+        <div class="candidates-table-container">
+          <table class="candidates-table">
+            <thead>
+              <tr>
+                <th>候補者名</th>
+                <th>政党</th>
+                <th>得票数</th>
+                <th>得票率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(candidate, index) in currentDistrict.candidates" :key="index">
+                <td>{{ candidate.name }}</td>
+                <td>
+                  <span class="party-badge" :style="{ backgroundColor: getPartyColor(candidate.party) }">
+                    {{ candidate.party }}
+                  </span>
+                </td>
+                <td class="votes">{{ formatNumber(candidate.votes) }}票</td>
+                <td class="percentage">{{ calculatePercentage(candidate.votes, currentDistrict.candidates) }}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <button @click="nextQuestion" class="btn btn-next">
+          {{ currentQuestion + 1 < totalQuestions ? '次の問題へ' : '結果を見る' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 結果画面 -->
+    <div v-if="screen === 'result'" class="screen result-screen">
+      <h2>🏆 結果発表</h2>
+      <div class="final-score">
+        <div class="score-number">{{ score.toFixed(2) }}</div>
+        <div class="score-max">/ {{ totalQuestions * 10 }} 点</div>
+      </div>
+      <div class="result-message">{{ getResultMessage() }}</div>
+      
+      <!-- ランキング登録 -->
+      <div v-if="showNameInput" class="name-input-container">
+        <p>ランキングに登録しますか？</p>
+        <input 
+          type="text" 
+          v-model="playerName" 
+          placeholder="名前を入力" 
+          maxlength="20"
+          class="name-input"
+          @keyup.enter="submitScore"
+        >
+        <button @click="submitScore" class="btn btn-submit-score">登録する</button>
+      </div>
+      
+      <div v-else class="ranking-registered">
+        ✅ ランキングに登録しました！
+      </div>
+      
+      <div class="result-buttons">
+        <button @click="startGame()" class="btn btn-retry">もう一度プレイ（{{ modeLabel }}）</button>
+        <button @click="showRanking()" class="btn btn-show-ranking">ランキング</button>
+        <button @click="screen = 'title'" class="btn btn-home">タイトルへ</button>
+      </div>
+    </div>
+
+    <!-- ランキング画面 -->
+    <div v-if="screen === 'ranking'" class="screen ranking-screen">
+      <h2>🏅 ランキング</h2>
+      
+      <div class="ranking-mode-tabs">
+        <button @click="showRanking('beginner')" :class="['tab-btn', gameMode === 'beginner' ? 'active' : '']">初級編</button>
+        <button @click="showRanking('advanced')" :class="['tab-btn', gameMode === 'advanced' ? 'active' : '']">上級編</button>
+      </div>
+      
+      <div v-if="ranking.length === 0" class="no-ranking">
+        まだ記録がありません
+      </div>
+      
+      <table v-else class="ranking-table">
+        <thead>
+          <tr>
+            <th>順位</th>
+            <th>名前</th>
+            <th>スコア</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(entry, index) in ranking" :key="index" :class="{ 'top-three': index < 3 }">
+            <td class="rank">
+              <span v-if="index === 0">🥇</span>
+              <span v-else-if="index === 1">🥈</span>
+              <span v-else-if="index === 2">🥉</span>
+              <span v-else>{{ index + 1 }}</span>
+            </td>
+            <td class="name">{{ entry.name }}</td>
+            <td class="entry-score">{{ entry.score.toFixed(2) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <div class="ranking-buttons">
+        <button @click="screen = 'title'" class="btn btn-home">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/partyColors.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
