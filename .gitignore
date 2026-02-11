@@ -1,2 +1,3 @@
 *.py
 *.txt
+data/election2026_full.json
