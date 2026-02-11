@@ -619,16 +619,3 @@ body {
   margin-top: 4px;
   font-weight: normal;
 }
-
-.answer-map {
-  margin: 10px 0;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-#answerMap {
-  width: 100%;
-  height: 200px;
-  border-radius: 8px;
-}
